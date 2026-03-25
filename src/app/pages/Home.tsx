@@ -6,6 +6,7 @@ import { Footer } from '../components/Footer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '../components/ui/dialog';
 
 const gameModes = [
   {
@@ -81,12 +82,36 @@ export function Home() {
             Play, Learn, and Watch AI Solve Complex Problems
           </p>
           <div className="flex gap-4 justify-center">
-            <Link to="/crypt-arithmetic">
-              <Button size="lg" className="gap-2 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700">
-                Start Playing
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button size="lg" className="gap-2 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 border-0 shadow-xl shadow-indigo-500/20 transition-all hover:scale-105 active:scale-95 duration-200">
+                  Start Playing
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md bg-background/80 backdrop-blur-xl border-border/50">
+                <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-indigo-500 to-violet-600 bg-clip-text text-transparent mb-1">Select a Game</DialogTitle>
+                <DialogDescription className="mb-4">
+                  Choose one of the constraint satisfaction puzzles to solve.
+                </DialogDescription>
+                <div className="grid gap-3">
+                  {gameModes.map((mode) => (
+                    <Link key={mode.id} to={mode.path} state={{ fromHome: true }} className="group flex flex-col items-center gap-3 p-4 rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/60 transition-colors">
+                      <div className="flex w-full items-center gap-4">
+                        <div className={`p-2.5 rounded-lg bg-gradient-to-br ${mode.color} text-white`}>
+                          <mode.icon className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 text-left">
+                          <h4 className="font-semibold">{mode.title}</h4>
+                          <p className="text-xs text-muted-foreground">{mode.description}</p>
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-1 transition-all" />
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         </motion.div>
 
@@ -112,9 +137,9 @@ export function Home() {
           ))}
         </div>
 
-        {/* Game Modes */}
+        {/* Game Information Display */}
         <div className="mb-12">
-          <h2 className="text-3xl font-semibold mb-8 text-center">Choose Your Challenge</h2>
+          <h2 className="text-3xl font-semibold mb-8 text-center bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">Available Puzzles</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {gameModes.map((mode, index) => (
               <motion.div
@@ -122,37 +147,31 @@ export function Home() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.5, delay: index * 0.15 }}
+                className="h-full"
               >
-                <Link to={mode.path}>
-                  <Card className="group border-border/50 bg-card/50 backdrop-blur hover:bg-card/80 transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-500/10 hover:-translate-y-2 h-full overflow-hidden">
-                    <div className={`h-2 bg-gradient-to-r ${mode.color}`} />
-                    <CardHeader className="pb-4">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${mode.color} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                          <mode.icon className="w-7 h-7 text-white" />
-                        </div>
-                        <Badge variant="secondary" className="text-xs">
-                          {mode.difficulty}
-                        </Badge>
+                <Card className="border-border/50 bg-card/50 backdrop-blur transition-all duration-300 h-full overflow-hidden relative group">
+                  <div className={`absolute top-0 inset-x-0 h-1 bg-gradient-to-r ${mode.color} opacity-70`} />
+                  <CardHeader className="pb-6 h-full flex flex-col">
+                    <div className="flex items-start justify-between mb-6">
+                      <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${mode.color} flex items-center justify-center shadow-lg`}>
+                        <mode.icon className="w-6 h-6 text-white" />
                       </div>
-                      <CardTitle className="text-2xl mb-2">{mode.title}</CardTitle>
-                      <CardDescription className="text-sm mb-4">
-                        {mode.description}
-                      </CardDescription>
-                      <div className="mt-4 px-3 py-2 bg-muted/50 rounded-lg border border-border/50">
-                        <code className="text-xs text-muted-foreground font-mono">
-                          {mode.example}
-                        </code>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <Button className="w-full gap-2 group-hover:bg-gradient-to-r group-hover:from-indigo-500 group-hover:to-violet-600" variant="secondary">
-                        Play Mode
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </Link>
+                      <Badge variant="outline" className="text-xs backdrop-blur-md">
+                        {mode.difficulty}
+                      </Badge>
+                    </div>
+                    <CardTitle className="text-2xl mb-3 tracking-tight">{mode.title}</CardTitle>
+                    <CardDescription className="text-base leading-relaxed mb-4 flex-1">
+                      {mode.description}
+                    </CardDescription>
+                    <div className="mt-auto px-4 py-3 bg-muted/30 rounded-xl border border-white/5">
+                      <div className="text-[10px] uppercase font-bold text-muted-foreground mb-1 tracking-wider">Example</div>
+                      <code className="text-sm font-semibold font-mono text-foreground/80">
+                        {mode.example}
+                      </code>
+                    </div>
+                  </CardHeader>
+                </Card>
               </motion.div>
             ))}
           </div>

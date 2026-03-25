@@ -31,7 +31,8 @@ export function MapColoring() {
   const [solution, setSolution] = useState<Map<string, number> | null>(null);
   const [metrics, setMetrics] = useState({ nodesExplored: 0, backtracks: 0, timeMs: 0 });
   const [currentAssignment, setCurrentAssignment] = useState<Map<string, number>>(new Map());
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const solverRef = useRef<CSPSolver | null>(null);
 
   const currentStep = currentStepIndex >= 0 ? steps[currentStepIndex] : null;
 
@@ -49,6 +50,9 @@ export function MapColoring() {
   }, []);
 
   const handleReset = () => {
+    if (solverRef.current) {
+      solverRef.current.abort();
+    }
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -62,7 +66,7 @@ export function MapColoring() {
     setCurrentAssignment(new Map());
   };
 
-  const handleSolve = async () => {
+  const handleSolve = async (instant = false) => {
     if (isRunning && !isPaused) {
       setIsPaused(true);
       if (intervalRef.current) {
@@ -93,26 +97,46 @@ export function MapColoring() {
             toast.error('No solution found');
           }
         }
-      }, 1000 - speed[0] * 9);
+      }, Math.max(10, 1000 - speed[0] * 3));
       return;
     }
 
     handleReset();
     setIsRunning(true);
+    
+    // Allow React to gracefully render the reset state
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
       const { variables, constraints } = mapToCSP(mapProblem);
       const solver = new CSPSolver(variables, constraints, algorithm);
+      solverRef.current = solver;
 
       const allSteps: SolverStep[] = [];
       solver.setStepCallback((step) => {
         allSteps.push(step);
       });
 
-      const result = await solver.solve(0);
+      const result = await solver.solve(0, !instant);
+      
+      if (solverRef.current !== solver || (solver.getMetrics().nodesExplored === 0 && !result.solution)) {
+         return;
+      }
+      
       setSteps(allSteps);
       setSolution(result.solution);
       setMetrics(result.metrics);
+
+      if (instant) {
+        if (result.solution) {
+          setCurrentAssignment(new Map(result.solution));
+          toast.success('Map colored instantly!');
+        } else {
+          toast.error('No solution found');
+        }
+        setIsRunning(false);
+        return;
+      }
 
       // Animate through steps
       let stepIndex = 0;
@@ -133,7 +157,7 @@ export function MapColoring() {
             toast.error('No solution found');
           }
         }
-      }, 1000 - speed[0] * 9);
+      }, Math.max(10, 1000 - speed[0] * 3));
     } catch (error) {
       console.error('Solver error:', error);
       toast.error('An error occurred while solving');
@@ -357,7 +381,7 @@ export function MapColoring() {
                   value={speed}
                   onValueChange={setSpeed}
                   min={10}
-                  max={100}
+                  max={300}
                   step={10}
                   disabled={isRunning}
                 />
@@ -368,8 +392,16 @@ export function MapColoring() {
               {/* Control Buttons */}
               <div className="space-y-3">
                 <Button
-                  className="w-full gap-2 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700"
-                  onClick={handleSolve}
+                  className="w-full gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-emerald-500/20"
+                  onClick={() => handleSolve(true)}
+                  disabled={isRunning}
+                >
+                  <Zap className="w-4 h-4" /> Find Answer Instantly
+                </Button>
+
+                <Button
+                  className="w-full gap-2 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 shadow-lg shadow-violet-500/20"
+                  onClick={() => handleSolve(false)}
                   disabled={isRunning && !isPaused}
                 >
                   {isRunning ? (

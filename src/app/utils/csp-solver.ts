@@ -29,6 +29,10 @@ export class CSPSolver {
   private backtracks = 0;
   private stepCallback?: (step: SolverStep) => void;
   private algorithm: AlgorithmType = 'backtracking';
+  private recordSteps: boolean = true;
+  private maxSteps: number = 5000;
+  private aborted: boolean = false;
+  private lastYieldTime: number = 0;
 
   constructor(
     variables: CSPVariable[],
@@ -40,11 +44,23 @@ export class CSPSolver {
     this.algorithm = algorithm;
   }
 
+  abort() {
+    this.aborted = true;
+  }
+
   setStepCallback(callback: (step: SolverStep) => void) {
     this.stepCallback = callback;
   }
 
   private addStep(step: Omit<SolverStep, 'timestamp'>) {
+    if (!this.recordSteps && step.type !== 'solution' && step.type !== 'failure') {
+      return;
+    }
+    
+    if (this.steps.length >= this.maxSteps && step.type !== 'solution' && step.type !== 'failure') {
+      return;
+    }
+
     const fullStep = { ...step, timestamp: Date.now() };
     this.steps.push(fullStep);
     if (this.stepCallback) {
@@ -96,6 +112,8 @@ export class CSPSolver {
     assignment: Map<string, number>,
     delay: number = 0
   ): Promise<Map<string, number> | null> {
+    if (this.aborted) return null;
+
     // Check if assignment is complete
     if (assignment.size === this.variables.size) {
       this.addStep({
@@ -124,6 +142,13 @@ export class CSPSolver {
 
       if (delay > 0) {
         await new Promise(resolve => setTimeout(resolve, delay));
+      } else if (this.nodesExplored % 100 === 0) {
+        // Yield to the event loop based on time to maximize compute speed while keeping UI responsive
+        const now = Date.now();
+        if (now - this.lastYieldTime > 40) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          this.lastYieldTime = Date.now();
+        }
       }
 
       if (this.isConsistent(variable, value, assignment)) {
@@ -166,7 +191,7 @@ export class CSPSolver {
     return null;
   }
 
-  async solve(delay: number = 0): Promise<{
+  async solve(delay: number = 0, recordSteps: boolean = true): Promise<{
     solution: Map<string, number> | null;
     steps: SolverStep[];
     metrics: {
@@ -178,6 +203,9 @@ export class CSPSolver {
     this.steps = [];
     this.nodesExplored = 0;
     this.backtracks = 0;
+    this.recordSteps = recordSteps;
+    this.aborted = false;
+    this.lastYieldTime = Date.now();
 
     const startTime = Date.now();
     const solution = await this.backtrack(new Map(), delay);

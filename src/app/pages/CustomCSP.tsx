@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Footer } from '../components/Footer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -46,8 +46,18 @@ export function CustomCSP() {
   const [solution, setSolution] = useState<Map<string, number> | null>(null);
   const [metrics, setMetrics] = useState({ nodesExplored: 0, backtracks: 0, timeMs: 0 });
   const [currentAssignment, setCurrentAssignment] = useState<Map<string, number>>(new Map());
+  const solverRef = useRef<CSPSolver | null>(null);
+  const animationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentStep = currentStepIndex >= 0 ? steps[currentStepIndex] : null;
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (animationIntervalRef.current) clearInterval(animationIntervalRef.current);
+      if (solverRef.current) solverRef.current.abort();
+    };
+  }, []);
 
   const addVariable = () => {
     const newId = (Math.max(0, ...variables.map(v => parseInt(v.id))) + 1).toString();
@@ -172,6 +182,13 @@ export function CustomCSP() {
   };
 
   const handleReset = () => {
+    if (solverRef.current) {
+       solverRef.current.abort();
+    }
+    if (animationIntervalRef.current) {
+      clearInterval(animationIntervalRef.current);
+      animationIntervalRef.current = null;
+    }
     setIsRunning(false);
     setIsPaused(false);
     setSteps([]);
@@ -181,7 +198,7 @@ export function CustomCSP() {
     setCurrentAssignment(new Map());
   };
 
-  const handleSolve = async () => {
+  const handleSolve = async (instant = false) => {
     if (isRunning && !isPaused) {
       setIsPaused(true);
       return;
@@ -197,28 +214,49 @@ export function CustomCSP() {
 
     handleReset();
     setIsRunning(true);
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     const solver = new CSPSolver(csp.variables, csp.constraints, algorithm);
+    solverRef.current = solver;
 
     const allSteps: SolverStep[] = [];
     solver.setStepCallback((step) => {
       allSteps.push(step);
     });
 
-    const result = await solver.solve(0);
+    const result = await solver.solve(0, !instant);
+    
+    if (solverRef.current !== solver || (solver.getMetrics().nodesExplored === 0 && !result.solution)) {
+       return;
+    }
     setSteps(allSteps);
     setSolution(result.solution);
     setMetrics(result.metrics);
 
+    if (instant) {
+      if (result.solution) {
+        setCurrentAssignment(new Map(result.solution));
+        toast.success('CSP solved instantly!');
+      } else {
+        toast.error('No solution found');
+      }
+      setIsRunning(false);
+      return;
+    }
+
     // Animate through steps
+    if (animationIntervalRef.current) {
+      clearInterval(animationIntervalRef.current);
+    }
     let stepIndex = 0;
-    const interval = setInterval(() => {
+    animationIntervalRef.current = setInterval(() => {
       if (stepIndex < allSteps.length) {
         setCurrentStepIndex(stepIndex);
         setCurrentAssignment(new Map(allSteps[stepIndex].assignment));
         stepIndex++;
       } else {
-        clearInterval(interval);
+        if (animationIntervalRef.current) clearInterval(animationIntervalRef.current);
         setIsRunning(false);
         if (result.solution) {
           toast.success('CSP solved successfully!');
@@ -226,7 +264,7 @@ export function CustomCSP() {
           toast.error('No solution found');
         }
       }
-    }, 1000 - speed[0] * 9);
+    }, Math.max(10, 1000 - speed[0] * 3));
   };
 
   const constraintTypeLabels = {
@@ -443,7 +481,7 @@ export function CustomCSP() {
                   value={speed}
                   onValueChange={setSpeed}
                   min={10}
-                  max={100}
+                  max={300}
                   step={10}
                   disabled={isRunning}
                 />
@@ -454,8 +492,16 @@ export function CustomCSP() {
               {/* Control Buttons */}
               <div className="space-y-3">
                 <Button
-                  className="w-full gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700"
-                  onClick={handleSolve}
+                  className="w-full gap-2 bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 shadow-lg shadow-indigo-500/20"
+                  onClick={() => handleSolve(true)}
+                  disabled={(isRunning && !isPaused) || variables.length === 0}
+                >
+                  <Zap className="w-4 h-4" /> Find Answer Instantly
+                </Button>
+
+                <Button
+                  className="w-full gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-lg shadow-emerald-500/20"
+                  onClick={() => handleSolve(false)}
                   disabled={(isRunning && !isPaused) || variables.length === 0}
                 >
                   {isRunning ? (
