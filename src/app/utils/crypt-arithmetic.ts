@@ -32,11 +32,23 @@ export function puzzleToCSP(puzzle: CryptArithmeticPuzzle): {
   variables: CSPVariable[];
   constraints: CSPConstraint[];
 } {
-  // Extract unique letters
+  // Extract unique letters strictly from right-to-left (least significant digit to most)
+  // This seamlessly forces the `CSPSolver`'s MRV heuristic to explore columns optimally!
   const letters = new Set<string>();
-  [...puzzle.operand1, ...puzzle.operand2, ...puzzle.result].forEach(letter => {
-    letters.add(letter);
-  });
+  const len1 = puzzle.operand1.length;
+  const len2 = puzzle.operand2.length;
+  const resLen = puzzle.result.length;
+  const maxLen = Math.max(len1, len2, resLen);
+
+  for (let i = 0; i < maxLen; i++) {
+    const c1 = len1 - 1 - i >= 0 ? puzzle.operand1[len1 - 1 - i] : null;
+    const c2 = len2 - 1 - i >= 0 ? puzzle.operand2[len2 - 1 - i] : null;
+    const cRes = resLen - 1 - i >= 0 ? puzzle.result[resLen - 1 - i] : null;
+
+    if (c1) letters.add(c1);
+    if (c2) letters.add(c2);
+    if (cRes) letters.add(cRes);
+  }
 
   const letterArray = Array.from(letters);
 
@@ -48,17 +60,21 @@ export function puzzleToCSP(puzzle: CryptArithmeticPuzzle): {
 
   const constraints: CSPConstraint[] = [];
 
-  // All different constraint
-  constraints.push({
-    variables: letterArray,
-    check: (assignment) => {
-      const values = Array.from(assignment.values());
-      return new Set(values).size === values.length;
-    },
-    description: 'All letters must have different values',
-  });
+  // 1. Immediate Pairwise Uniqueness Pruning
+  // Instead of checking if all 10 are unique at the very end of the tree,
+  // we generate N*(N-1)/2 individual constraints so duplicates are killed immediately!
+  for (let i = 0; i < letterArray.length; i++) {
+    for (let j = i + 1; j < letterArray.length; j++) {
+      constraints.push({
+        variables: [letterArray[i], letterArray[j]],
+        check: (assignment) => {
+          return assignment.get(letterArray[i]) !== assignment.get(letterArray[j]);
+        }
+      });
+    }
+  }
 
-  // Leading zeros constraint
+  // 2. Leading zeros constraint (checked immediately upon assignment)
   const leadingLetters = [
     puzzle.operand1[0],
     puzzle.operand2[0],
@@ -72,46 +88,59 @@ export function puzzleToCSP(puzzle: CryptArithmeticPuzzle): {
         const value = assignment.get(letter);
         return value !== undefined && value !== 0;
       },
-      description: `${letter} cannot be 0 (leading digit)`,
+      description: `${letter} !== 0`,
     });
   }
 
-  // Arithmetic constraint
-  constraints.push({
-    variables: letterArray,
-    check: (assignment) => {
-      // Convert words to numbers
-      const wordToNumber = (word: string) => {
-        let num = 0;
-        for (const letter of word) {
-          const digit = assignment.get(letter);
-          if (digit === undefined) return null;
-          num = num * 10 + digit;
+  // 3. Column-Wise Modulo Evaluation 
+  // Evaluates every single column sequentially directly as variables become available.
+  const posMod = (n: number, m: number) => ((n % m) + m) % m;
+  
+  for (let i = 0; i < maxLen; i++) {
+    const colLetters = new Set<string>();
+    for (let j = 0; j <= i; j++) {
+      const c1 = len1 - 1 - j >= 0 ? puzzle.operand1[len1 - 1 - j] : null;
+      const c2 = len2 - 1 - j >= 0 ? puzzle.operand2[len2 - 1 - j] : null;
+      const cRes = resLen - 1 - j >= 0 ? puzzle.result[resLen - 1 - j] : null;
+      if (c1) colLetters.add(c1);
+      if (c2) colLetters.add(c2);
+      if (cRes) colLetters.add(cRes);
+    }
+
+    constraints.push({
+      variables: Array.from(colLetters), // Triggers the instant this specific column's letters are fully assigned!
+      check: (assignment) => {
+        const getSuffixVal = (word: string) => {
+          let val = 0;
+          let multiplier = 1;
+          const charsToRead = Math.min(word.length, i + 1);
+          for (let k = 0; k < charsToRead; k++) {
+            const char = word[word.length - 1 - k];
+            val += assignment.get(char)! * multiplier;
+            multiplier *= 10;
+          }
+          return val;
+        };
+
+        const suffix1 = getSuffixVal(puzzle.operand1);
+        const suffix2 = getSuffixVal(puzzle.operand2);
+        const suffixRes = getSuffixVal(puzzle.result);
+        const mod = Math.pow(10, i + 1);
+
+        switch (puzzle.operation) {
+          case '+':
+            return posMod(suffix1 + suffix2, mod) === posMod(suffixRes, mod);
+          case '-':
+            return posMod(suffix1 - suffix2, mod) === posMod(suffixRes, mod);
+          case '*':
+            return posMod(suffix1 * suffix2, mod) === posMod(suffixRes, mod);
+          default:
+            return false;
         }
-        return num;
-      };
-
-      const num1 = wordToNumber(puzzle.operand1);
-      const num2 = wordToNumber(puzzle.operand2);
-      const result = wordToNumber(puzzle.result);
-
-      if (num1 === null || num2 === null || result === null) {
-        return true; // Can't check yet
-      }
-
-      switch (puzzle.operation) {
-        case '+':
-          return num1 + num2 === result;
-        case '-':
-          return num1 - num2 === result;
-        case '*':
-          return num1 * num2 === result;
-        default:
-          return false;
-      }
-    },
-    description: `${puzzle.operand1} ${puzzle.operation} ${puzzle.operand2} = ${puzzle.result}`,
-  });
+      },
+      description: `Col ${i} Modulo Check`,
+    });
+  }
 
   return { variables, constraints };
 }

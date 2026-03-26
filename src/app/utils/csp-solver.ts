@@ -73,21 +73,23 @@ export class CSPSolver {
     value: number,
     assignment: Map<string, number>
   ): boolean {
-    const testAssignment = new Map(assignment);
-    testAssignment.set(variable, value);
+    assignment.set(variable, value); // Direct mutation for performance speedup
+    let consistent = true;
 
     for (const constraint of this.constraints) {
       // Check if all variables in the constraint are assigned
-      const allAssigned = constraint.variables.every(v => testAssignment.has(v));
+      const allAssigned = constraint.variables.every(v => assignment.has(v));
       
       if (allAssigned) {
-        if (!constraint.check(testAssignment)) {
-          return false;
+        if (!constraint.check(assignment)) {
+          consistent = false;
+          break;
         }
       }
     }
 
-    return true;
+    assignment.delete(variable); // Revert before leaving function securely
+    return consistent;
   }
 
   private selectUnassignedVariable(assignment: Map<string, number>): string | null {
@@ -130,13 +132,21 @@ export class CSPSolver {
     const varData = this.variables.get(variable)!;
 
     for (const value of varData.domain) {
+      // 1. Instant Pruning
+      // If the branch is mathematically impossible, skip it early without counting nodes!
+      if (!this.isConsistent(variable, value, assignment)) {
+        continue;
+      }
+
+      // 2. Variable Assignment (Valid Node)
       this.nodesExplored++;
+      assignment.set(variable, value);
 
       this.addStep({
         type: 'assign',
         variable,
         value,
-        message: `Trying ${variable} = ${value}`,
+        message: `Assigned ${variable} = ${value}`,
         assignment: new Map(assignment),
       });
 
@@ -151,41 +161,22 @@ export class CSPSolver {
         }
       }
 
-      if (this.isConsistent(variable, value, assignment)) {
-        assignment.set(variable, value);
-
-        this.addStep({
-          type: 'constraint_check',
-          variable,
-          value,
-          message: `✓ ${variable} = ${value} is consistent`,
-          assignment: new Map(assignment),
-        });
-
-        const result = await this.backtrack(assignment, delay);
-        if (result !== null) {
-          return result;
-        }
-
-        assignment.delete(variable);
-        this.backtracks++;
-
-        this.addStep({
-          type: 'backtrack',
-          variable,
-          value,
-          message: `✗ Backtracking from ${variable} = ${value}`,
-          assignment: new Map(assignment),
-        });
-      } else {
-        this.addStep({
-          type: 'constraint_check',
-          variable,
-          value,
-          message: `✗ ${variable} = ${value} violates constraints`,
-          assignment: new Map(assignment),
-        });
+      const result = await this.backtrack(assignment, delay);
+      if (result !== null) {
+        return result;
       }
+
+      // 3. Recursive Branch Failed - Backtrack
+      assignment.delete(variable);
+      this.backtracks++;
+
+      this.addStep({
+        type: 'backtrack',
+        variable,
+        value,
+        message: `Backtracked from ${variable} = ${value}`,
+        assignment: new Map(assignment),
+      });
     }
 
     return null;
